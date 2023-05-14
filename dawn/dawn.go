@@ -1,16 +1,15 @@
 package dawn
 
 import (
-	"fmt"
 	"net/http"
 )
 
 // HandlerFunc defines the request handler used by gee
-type HandleFunc func(http.ResponseWriter, *http.Request)
+type HandleFunc func(c *Context)
 
 // Engine implement the interface of ServeHTTP
 type Engine struct {
-	router map[string]HandleFunc
+	router *router
 }
 
 var _ http.Handler = &Engine{}
@@ -18,14 +17,12 @@ var _ http.Handler = &Engine{}
 // New is a constructor of Engine
 func New() *Engine {
 	return &Engine{
-		router: make(map[string]HandleFunc),
+		router: newRouter(),
 	}
 }
 
 func (e *Engine) addRoute(method, pattern string, handler HandleFunc) {
-	key := method + "-" + pattern
-	fmt.Println("add route: ", key)
-	e.router[key] = handler
+	e.router.addRoute(method, pattern, handler)
 }
 
 func (e *Engine) Get(pattern string, handler HandleFunc) {
@@ -41,10 +38,6 @@ func (e *Engine) Run(addr string) error {
 }
 
 func (e *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	key := req.Method + "-" + req.URL.Path
-	if handler, ok := e.router[key]; ok {
-		handler(w, req)
-	} else {
-		fmt.Fprintln(w, "404 not found")
-	}
+	c := newContext(w, req)
+	e.router.handle(c)
 }
