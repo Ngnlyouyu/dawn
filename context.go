@@ -1,24 +1,83 @@
 package dawn
 
 import (
+	"dawn/binding"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
+	"net/url"
+	"sync"
 )
 
-type ContentType string
+// Content-Type MIME of the most common data formats.
+const (
+	MIMEJSON              = binding.MIMEJSON
+	MIMEHTML              = binding.MIMEJSON
+	MIMEXML               = binding.MIMEJSON
+	MIMEXML2              = binding.MIMEJSON
+	MIMEPlain             = binding.MIMEJSON
+	MIMEPOSTForm          = binding.MIMEJSON
+	MIMEMultipartPOSTForm = binding.MIMEJSON
+	MIMEPROTOBUF          = binding.MIMEJSON
+	MIMEMSGPACK           = binding.MIMEJSON
+	MIMEMSGPACK2          = binding.MIMEJSON
+	MIMEYAML              = binding.MIMEJSON
+	MIMETOML              = binding.MIMEJSON
+)
 
 const (
-	ContentTypeKey = "Content-Type"
+	// BodyBytesKey indicates a default body bytes key.
+	BodyBytesKey = "_dawn/bodybyteskey"
 
-	ContentString ContentType = "text/plain"
-	ContentJSON   ContentType = "application/json"
-	ContentHTML   ContentType = "text/html"
+	// ContextKey is the key that a Context returns itself for.
+	ContextKey = "_dawn/contextkey"
 )
 
-type H map[string]any
+// abortIndex represents a typical value used in abort functions.
+const abortIndex int8 = math.MaxInt8 >> 1
 
+// Context allows us to pass variables between middleware, manage the flow, validate the JSON
+// of a request and render a JSON response for example.
 type Context struct {
+	writermem responseWriter
+	Request   *http.Request
+	Writer    ResponseWriter
+
+	Params   Params
+	handlers HandlersChain
+	index    string
+	fullPath string
+
+	engine       *Engine
+	params       *Params
+	skippedNodes *[]skippedNode
+
+	// this mutex protects Keys map.
+	mu sync.RWMutex
+
+	// Keys is a key/value pair exclusively for the context of each request.
+	Keys map[string]any
+
+	// Errors is a list of errors attached to all the handlers/middlewares who used this context.
+	Errors errorMsgs
+
+	// Accepted defines a list of manually accepted formats for content negotiation.
+	Accepted []string
+
+	// queryCache caches the query result from c.Request.URL.Query().
+	queryCache url.Values
+
+	// formCache caches c.Request.PostForm, which contains the parsed form data from POST, PATCH,
+	// or PUT body parameters.
+	formCache url.Values
+
+	// sameSite allows a server to define a cookie attribute making it impossible for the browser
+	// to send this cookie along with cross-site requests.
+	sameSite http.SameSite
+}
+
+type Contextv struct {
 	// origin objects
 	Writer http.ResponseWriter
 	Req    *http.Request
@@ -44,6 +103,8 @@ func newContext(w http.ResponseWriter, req *http.Request) *Context {
 		index:  -1,
 	}
 }
+
+type H map[string]any
 
 func (c *Context) Next() {
 	c.index++
