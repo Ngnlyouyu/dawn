@@ -2,12 +2,14 @@ package dawn
 
 import (
 	"dawn/binding"
-	"encoding/json"
-	"fmt"
+	"dawn/render"
+	"io"
 	"math"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 )
 
 // Content-Type MIME of the most common data formats.
@@ -77,91 +79,421 @@ type Context struct {
 	sameSite http.SameSite
 }
 
-type Contextv struct {
-	// origin objects
-	Writer http.ResponseWriter
-	Req    *http.Request
-	// request info
-	Path   string
-	Method string
-	Params map[string]string
-	// response info
-	StatusCode int
-	// middleware
-	handlers []HandlerFunc
-	index    int
+/************************************/
+/********** CONTEXT CREATION ********/
+/************************************/
 
-	engine *Engine
+func (c *Context) reset() {}
+
+func (c *Context) Copy() {}
+
+func (c *Context) HandlerName() string {
+	return ""
 }
 
-func newContext(w http.ResponseWriter, req *http.Request) *Context {
-	return &Context{
-		Writer: w,
-		Req:    req,
-		Path:   req.URL.Path,
-		Method: req.Method,
-		index:  -1,
-	}
+func (c *Context) HandlerNames() []string {
+	return nil
 }
 
-type H map[string]any
-
-func (c *Context) Next() {
-	c.index++
-	for ; c.index < len(c.handlers); c.index++ {
-		c.handlers[c.index](c)
-	}
+func (c *Context) Handler() HandlerFunc {
+	return nil
 }
 
-func (c *Context) Fail(code int, err string) {
-	c.index = len(c.handlers)
-	c.JSON(code, H{"message": err})
+func (c *Context) FullPath() string {
+	return ""
 }
+
+/************************************/
+/*********** FLOW CONTROL ***********/
+/************************************/
+
+func (c *Context) Next() {}
+
+func (c *Context) IsAborted() bool {
+	return false
+}
+
+func (c *Context) Abort() {}
+
+func (c *Context) AbortWithStatus(code int) {}
+
+func (c *Context) AbortWithStatusJSON(code int, jsonObj any) {}
+
+func (c *Context) AbortWithError(code int, err error) *Error {
+	return nil
+}
+
+/************************************/
+/********* ERROR MANAGEMENT *********/
+/************************************/
+
+func (c *Context) Error(err error) *Error {
+	return nil
+}
+
+/************************************/
+/******** METADATA MANAGEMENT********/
+/************************************/
+
+func (c *Context) Set(key string, value any) {}
+
+func (c *Context) Get(key string) (value any, exists bool) {
+	return nil, false
+}
+
+func (c *Context) MustGet(key string) (s string) {
+	return ""
+}
+
+func (c *Context) GetString(key string) (s string) {
+	return ""
+}
+
+func (c *Context) GetBool(key string) (b bool) {
+	return false
+}
+
+func (c *Context) GetInt(key string) (i int) {
+	return 0
+}
+
+func (c *Context) GetInt64(key string) (i64 int64) {
+	return 0
+}
+
+func (c *Context) GetUint(key string) (ui uint) {
+	return 0
+}
+
+func (c *Context) GetUint64(key string) (ui64 uint64) {
+	return 0
+}
+
+func (c *Context) GetFloat64(key string) (f64 float64) {
+	return 0
+}
+
+func (c *Context) GetTime(key string) (t time.Time) {
+	return time.Now()
+}
+
+func (c *Context) GetDuration(key string) (d time.Duration) {
+	return 0
+}
+
+func (c *Context) GetStringSlice(key string) (ss []string) {
+	return nil
+}
+
+func (c *Context) GetStringMap(key string) (sm map[string]any) {
+	return nil
+}
+
+func (c *Context) GetStringMapString(key string) (sms map[string]string) {
+	return nil
+}
+
+func (c *Context) GetStringMapStringSlice(key string) (smss map[string][]string) {
+	return nil
+}
+
+/************************************/
+/************ INPUT DATA ************/
+/************************************/
 
 func (c *Context) Param(key string) string {
-	return c.Params[key]
+	return ""
 }
 
-func (c *Context) PostForm(key string) string {
-	return c.Req.FormValue(key)
+func (c *Context) AddParam(key, value string) {}
+
+func (c *Context) Query(key string) (value string) {
+	return ""
 }
 
-func (c *Context) Query(key string) string {
-	return c.Req.URL.Query().Get(key)
+func (c *Context) DefaultQuery(key, defaultValue string) string {
+	return ""
 }
 
-func (c *Context) Status(code int) {
-	c.StatusCode = code
-	c.Writer.WriteHeader(code)
+func (c *Context) GetQuery(key string) (string, bool) {
+	return "", false
 }
 
-func (c *Context) SetHeader(key string, value string) {
-	c.Writer.Header().Set(key, value)
+func (c *Context) QuerySlice(key string) (values []string) {
+	return nil
 }
 
-func (c *Context) Data(code int, data []byte) {
-	c.Status(code)
-	c.Writer.Write(data)
+func (c *Context) initQueryCache() {}
+
+func (c *Context) GetQuerySlice(key string) (values []string, ok bool) {
+	return nil, false
 }
 
-func (c *Context) String(code int, format string, a ...any) {
-	c.SetHeader(ContentTypeKey, string(ContentString))
-	c.Status(code)
-	c.Writer.Write([]byte(fmt.Sprintf(format, a...)))
+func (c *Context) QueryMap(key string) (dicts map[string]string) {
+	return nil
 }
 
-func (c *Context) JSON(code int, v any) {
-	c.SetHeader(ContentTypeKey, string(ContentJSON))
-	c.Status(code)
-	if err := json.NewEncoder(c.Writer).Encode(v); err != nil {
-		http.Error(c.Writer, err.Error(), 500)
-	}
+func (c *Context) GetQueryMap(key string) (map[string]string, bool) {
+	return nil, false
 }
 
-func (c *Context) HTML(code int, name string, data any) {
-	c.SetHeader(ContentTypeKey, string(ContentHTML))
-	c.Status(code)
-	if err := c.engine.htmlTemplates.ExecuteTemplate(c.Writer, name, data); err != nil {
-		c.Fail(500, err.Error())
-	}
+func (c *Context) PostForm(key string) (value string) {
+	return ""
+}
+
+func (c *Context) DefaultPostForm(key, defalutValue string) string {
+	return ""
+}
+
+func (c *Context) GetPostForm(key string) (string, bool) {
+	return "", false
+}
+
+func (c *Context) PostFormSlice(key string) (values []string) {
+	return nil
+}
+
+func (c *Context) initFormCache() {}
+
+func (c *Context) GetPostFormSlice(key string) (values []string, ok bool) {
+	return nil, false
+}
+
+func (c *Context) PostFormMap(key string) (dicts map[string]string) {
+	return nil
+}
+
+func (c *Context) GetPostFormMap(key string) (map[string]string, bool) {
+	return nil, false
+}
+
+func (c *Context) get(m map[string][]string, key string) (map[string]string, bool) {
+	return nil, false
+}
+
+func (c *Context) FormFile(name string) (*multipart.FileHeader, error) {
+	return nil, nil
+}
+
+func (c *Context) MultipartForm() (*multipart.Form, error) {
+	return nil, nil
+}
+
+func (c *Context) SaveUploadedFile(file *multipart.FileHeader, dst string) error {
+	return nil
+}
+
+func (c *Context) Bind(obj any) error {
+	return nil
+}
+
+func (c *Context) BindJSON(obj any) error {
+	return nil
+}
+
+func (c *Context) BindXML(obj any) error {
+	return nil
+}
+
+func (c *Context) BindQuery(obj any) error {
+	return nil
+}
+
+func (c *Context) BindYAML(obj any) error {
+	return nil
+}
+
+func (c *Context) BindTOML(obj any) error {
+	return nil
+}
+
+func (c *Context) BindHeader(obj any) error {
+	return nil
+}
+
+func (c *Context) BindUri(obj any) error {
+	return nil
+}
+
+func (c *Context) MustBindWith(obj any, b binding.Binding) error {
+	return nil
+}
+
+func (c *Context) ShouldBind(obj any) error {
+	return nil
+}
+
+func (c *Context) ShouldBindJSON(obj any) error {
+	return nil
+}
+
+func (c *Context) ShouldBindXML(obj any) error {
+	return nil
+}
+
+func (c *Context) ShouldBindQuery(obj any) error {
+	return nil
+}
+
+func (c *Context) ShouldBindYAML(obj any) error {
+	return nil
+}
+
+func (c *Context) ShouldBindTOML(obj any) error {
+	return nil
+}
+
+func (c *Context) ShouldBindHeader(obj any) error {
+	return nil
+}
+
+func (c *Context) ShouldBindUri(obj any) error {
+	return nil
+}
+
+func (c *Context) ShouldBindWith(obj any, b binding.Binding) error {
+	return nil
+}
+
+func (c *Context) ShouldBindBodyWith(obj any, bb binding.BindingBody) error {
+	return nil
+}
+
+func (c *Context) ClientIP() string {
+	return ""
+}
+
+func (c *Context) RemoteIP() string {
+	return ""
+}
+
+func (c *Context) ContentType() string {
+	return ""
+}
+
+func (c *Context) IsWebsocket() bool {
+	return false
+}
+
+func (c *Context) requestHeader(key string) string {
+	return ""
+}
+
+/************************************/
+/******** RESPONSE RENDERING ********/
+/************************************/
+
+func bodyAllowedForStatus(status int) bool {
+	return false
+}
+
+func (c *Context) Status(code int) {}
+
+func (c *Context) Header(key, value string) {}
+
+func (c *Context) GetHeader(key string) string {
+	return ""
+}
+
+func (c *Context) GetRawData() ([]byte, error) {
+	return nil, nil
+}
+
+func (c *Context) SetSameSite(samesite http.SameSite) {}
+
+func (c *Context) SetCookie(name, value string, maxAge int, path, domain string, secure, httpOnly bool) {
+
+}
+
+func (c *Context) Cookie(name string) (string, error) {
+	return "", nil
+}
+
+func (c *Context) Render(code int, r render.Render) {}
+
+func (c *Context) HTML(code int, name string, obj any) {}
+
+func (c *Context) IndentedJSON(code int, obj any) {}
+
+func (c *Context) SecureJSON(code int, obj any) {}
+
+func (c *Context) JSONP(code int, obj any) {}
+
+func (c *Context) JSON(code int, obj any) {}
+
+func (c *Context) AsciiJSON(code int, obj any) {}
+
+func (c *Context) PureJSON(code int, obj any) {}
+
+func (c *Context) XML(code int, obj any) {}
+
+func (c *Context) YAML(code int, obj any) {}
+
+func (c *Context) TOML(code int, obj any) {}
+
+func (c *Context) ProtoBuf(code int, obj any) {}
+
+func (c *Context) String(code int, obj any) {}
+
+func (c *Context) Redirect(code int, location string) {}
+
+func (c *Context) Data(code int, contentType string, data []byte) {}
+
+func (c *Context) DataFromRender(code int, contentLength int64, contentType string, render io.Reader, extraHeaders map[string]string) {
+}
+
+func (c *Context) File(filePath string) {}
+
+func (c *Context) FileFromFS(filePath string, fs http.FileSystem) {}
+
+func (c *Context) FileAttachment(filePath, fileName string) {}
+
+func (c *Context) SSEvent(name string, message any) {}
+
+func (c *Context) Stream(step func(w io.Writer) bool) bool {
+	return false
+}
+
+/************************************/
+/******** CONTENT NEGOTIATION *******/
+/************************************/
+
+// Negotiate contains all negotiations data.
+type Negotiate struct {
+	Offered  []string
+	HTMLName string
+	HTMLData any
+	JSONData any
+	XMLData  any
+	YAMLData any
+	Data     any
+	TOMLData any
+}
+
+func (c *Context) Negotiate(code int, config Negotiate) {}
+
+func (c *Context) NegotiateFormat(offered ...string) string {
+	return ""
+}
+
+func (c *Context) SetAccepted(formats ...string) {}
+
+/************************************/
+/***** GOLANG.ORG/X/NET/CONTEXT *****/
+/************************************/
+
+func (c *Context) Deadline() (deadline time.Time, ok bool) {
+	return time.Now(), false
+}
+
+func (c *Context) Done() <-chan struct{} {
+	return nil
+}
+
+func (c *Context) Err() error {
+	return nil
+}
+
+func (c *Context) Value(key any) any {
+	return nil
 }
